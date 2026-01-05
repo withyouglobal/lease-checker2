@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>주택임대차 계약서 검증(테스트)</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- OCR: Tesseract.js -->
+  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+
+  <!-- Diff 표시(선택): diff-match-patch -->
+  <script src="https://cdn.jsdelivr.net/npm/diff-match-patch@1.0.5/diff_match_patch.js"></script>
+</head>
+<body>
+  <header>
+    <h1>주택임대차 계약서 검증(프로토타입)</h1>
+    <p class="sub">계약서 사진 → OCR → 표준계약서와 유사도/누락 앵커/주의 문구를 보여줍니다.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1) 표준계약서 텍스트</h2>
+      <p class="muted">저장소의 <code>standard.txt</code>를 자동 로드합니다. 필요하면 아래에 직접 붙여넣어 덮어쓸 수 있습니다.</p>
+      <textarea id="standardText" placeholder="표준계약서 텍스트(전체)를 여기에 붙여넣을 수 있습니다."></textarea>
+      <div class="row">
+        <button id="reloadStandard">standard.txt 다시 불러오기</button>
+        <span id="standardStatus" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2) 계약서 사진 업로드(촬영)</h2>
+      <p class="muted">스마트폰에서 “카메라”가 뜨면 촬영하세요. (가능하면 한 페이지씩)</p>
+      <input id="imageInput" type="file" accept="image/*" capture="environment" />
+      <div class="preview">
+        <img id="previewImg" alt="미리보기" />
+      </div>
+      <div class="row">
+        <button id="runBtn">OCR 후 검증 실행</button>
+        <span id="progress" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3) 결과</h2>
+      <div id="resultBox" class="result"></div>
+      <h3>차이(diff) 미리보기</h3>
+      <div id="diffBox" class="diff"></div>
+    </section>
+  </main>
+
+  <footer class="muted">
+    <p>주의: 본 도구는 테스트용이며 법률 자문이 아닙니다. OCR 품질에 따라 결과가 달라질 수 있습니다.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
