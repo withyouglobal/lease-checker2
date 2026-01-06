@@ -19,6 +19,21 @@ const diffBox = document.getElementById("diffBox");
 let loadedStandardText = "";
 
 /* =========================
+   Path helpers (중요: standard.txt 로드 안정화)
+========================= */
+function getProjectBasePath() {
+  // GitHub Pages 프로젝트 사이트는 보통 /<repo>/... 구조입니다.
+  // 예: /lease-checker2/ , /lease-checker2/index.html
+  // <repo>를 자동 추출해 항상 /<repo>/standard.txt 를 가리키게 합니다.
+  const parts = location.pathname.split("/").filter(Boolean);
+  return parts.length >= 1 ? `/${parts[0]}/` : "/";
+}
+
+function buildUrlUnderProject(relPath) {
+  return `${location.origin}${getProjectBasePath()}${relPath.replace(/^\//, "")}`;
+}
+
+/* =========================
    Anchors / Template
 ========================= */
 const STANDARD_ANCHORS = [
@@ -59,9 +74,10 @@ function detectTemplate(text) {
   const stdHits = countAnchorHits(text, STANDARD_ANCHORS);
   const aptHits = countAnchorHits(text, APT_ANCHORS);
 
-  // 제목 기반 힌트(아파트 전세 계약서 문구가 자주 등장)
   const t = normalizeForSearch(text);
-  const hasAptTitle = t.includes(normalizeForSearch("아파트전세계약서")) || t.includes(normalizeForSearch("아파트전세계약서"));
+  const hasAptTitle =
+    t.includes(normalizeForSearch("아파트전세계약서")) ||
+    t.includes(normalizeForSearch("아파트 전세 계약서"));
 
   if (stdHits >= 4 && stdHits >= aptHits) return { type: "STANDARD", stdHits, aptHits };
   if (aptHits >= 4 || hasAptTitle) return { type: "APT", stdHits, aptHits };
@@ -126,8 +142,7 @@ function containment(aSet, bSet) {
    OCR Cleanup (노이즈 완화)
 ========================= */
 function collapseSpacedLetters(line) {
-  // "본 아 파 트 에 대 하 여" 같은 '한 글자씩 띄어쓰기'를 부분적으로 축약
-  // 최소 4개 이상의 단일문자 토큰이 연속될 때만 작동
+  // "본 아 파 트 에 대 하 여" 같은 '한 글자씩 띄어쓰기'를 축약(조건부)
   const pattern = /(?:^|\s)(?:[가-힣A-Za-z0-9]\s){4,}[가-힣A-Za-z0-9](?:\s|$)/g;
   return line.replace(pattern, (m) => m.replace(/\s+/g, ""));
 }
@@ -138,7 +153,7 @@ function cleanOcrText(text) {
   // ¶ → 줄바꿈
   let t = text.replace(/¶/g, "\n");
 
-  // 공백 정리
+  // 공백/개행 정리
   t = t.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   t = t.replace(/[ \t]+/g, " ");
   t = t.replace(/\n{3,}/g, "\n\n");
@@ -172,7 +187,7 @@ function setProgress(msg) {
 
 function setStandardMeta() {
   const len = (standardTextEl.value || "").length;
-  standardMetaEl.textContent = `표준 텍스트 길이: ${len.toLocaleString()} 글자`;
+  if (standardMetaEl) standardMetaEl.textContent = `표준 텍스트 길이: ${len.toLocaleString()} 글자`;
 }
 
 function escapeHtml(s) {
@@ -197,6 +212,7 @@ function renderResult(payload) {
     containActualInStandard,
     containStandardInActual,
     jaccardScore,
+    stdUrl,
   } = payload;
 
   const templateLabel =
@@ -216,13 +232,16 @@ function renderResult(payload) {
     ? `<ul>${risks.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`
     : `<div>없음</div>`;
 
+  const stdUrlHtml = stdUrl ? `<div class="muted">표준 로드 URL: <code>${escapeHtml(stdUrl)}</code></div>` : "";
+
   resultBox.innerHTML = `
     <div><b>템플릿 감지:</b> ${escapeHtml(templateLabel)} (표준 앵커 ${stdHits}/${STANDARD_ANCHORS.length}, 아파트 앵커 ${aptHits}/${APT_ANCHORS.length})</div>
     <div><b>OCR 입력:</b> 사진 ${imageCount}장, OCR 글자수(정리 후): ${ocrLength.toLocaleString()}</div>
+    ${stdUrlHtml}
     <hr/>
 
     <div><b>포함률(실제→표준):</b> ${containActualInStandard}%</div>
-    <div class="muted">촬영한(인식된) 내용이 표준 텍스트 안에 얼마나 포함되는지 (부분 촬영에 강함)</div>
+    <div class="muted">촬영/인식된 내용이 표준 텍스트에 얼마나 포함되는지 (부분 촬영에 강함)</div>
 
     <div style="margin-top:8px;"><b>포함률(표준→실제):</b> ${containStandardInActual}%</div>
     <div class="muted">표준 텍스트가 OCR 결과에 얼마나 커버되는지 (부분 촬영이면 낮아질 수 있음)</div>
@@ -257,20 +276,24 @@ function renderDiff(stdText, actText) {
 }
 
 /* =========================
-   Load standard.txt
+   Load standard.txt (절대경로로 안정화)
 ========================= */
 async function loadStandardTxt() {
+  const stdUrl = buildUrlUnderProject("standard.txt");
   standardStatusEl.textContent = "standard.txt 불러오는 중...";
+
   try {
-    const res = await fetch("standard.txt", { cache: "no-store" });
-    if (!res.ok) throw new Error("standard.txt fetch failed");
+    const res = await fetch(stdUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     loadedStandardText = await res.text();
     standardTextEl.value = loadedStandardText;
     standardStatusEl.textContent = "standard.txt 로드 완료";
     setStandardMeta();
+    return { ok: true, url: stdUrl };
   } catch (e) {
-    standardStatusEl.textContent = "standard.txt 로드 실패(파일이 없거나 권한/경로 문제)";
+    standardStatusEl.textContent = `standard.txt 로드 실패: ${e.message}`;
     setStandardMeta();
+    return { ok: false, url: stdUrl, error: e };
   }
 }
 
@@ -290,6 +313,7 @@ function renderPreviews(files) {
 
   for (const file of files) {
     const url = URL.createObjectURL(file);
+
     const wrap = document.createElement("div");
     wrap.className = "thumbWrap";
 
@@ -338,7 +362,10 @@ async function runOCRAndCompare() {
   resultBox.innerHTML = "처리 중...";
   diffBox.innerHTML = "";
 
+  let stdUrl = "";
   try {
+    stdUrl = buildUrlUnderProject("standard.txt");
+
     setProgress("OCR 워커 준비 중...");
 
     const worker = await Tesseract.createWorker({
@@ -395,6 +422,7 @@ async function runOCRAndCompare() {
       containActualInStandard: containAinS,
       containStandardInActual: containSinA,
       jaccardScore: jacScore,
+      stdUrl,
     });
 
     renderDiff(stdClean, actual);
